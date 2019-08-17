@@ -35,6 +35,8 @@ private:
 	bool verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key);
 	std::string getToken(const http_request& message);
 	std::string createToken(const std::string uname, const std::string passwd);
+	void replaceXssChars(std::string& str);
+	web::json::value visitJsonTree(web::json::value& json);
 
 	void apiLogin(const http_request& message);
 	void apiAuth(const http_request& message);

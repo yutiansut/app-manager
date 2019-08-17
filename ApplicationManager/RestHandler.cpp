@@ -335,6 +335,62 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 	return std::move(token);
 }
 
+void RestHandler::replaceXssChars(std::string & str)
+{
+	static std::map<std::string, std::string> xssCommonChars = {
+		{ "<", "&lt;" },
+		{ ">", "&gt;" },
+		{ "\\(", "&#40;" },
+		{ "\\)", "&#41;" },
+		{ "'", "&#39;" },
+		{ "\"", "&quot;" },
+		{ "%", "&#37;" }
+	};
+	for (const auto& kvp : xssCommonChars)
+	{
+		boost::regex re(kvp.first, boost::regex::icase);
+		auto format = kvp.second;
+		boost::replace_all_regex(str, re, format, boost::match_flag_type::match_default);
+	}
+}
+
+web::json::value RestHandler::visitJsonTree(web::json::value & json)
+{
+	if (json.is_array())
+	{
+		// Go through array
+		auto arr = json.as_array();
+		for (size_t i = 0; i < arr.size(); ++i)
+		{
+			arr[i] = visitJsonTree(arr[i]);
+		}
+		return std::move(json);
+	}
+	else if (json.is_object())
+	{
+		// Go through object
+		auto jobj = json.as_object();
+		auto iter = jobj.begin();
+		while (iter != jobj.end())
+		{
+			jobj[iter->first] = visitJsonTree(iter->second);
+			iter++;
+		}
+		return std::move(json);
+	}
+	else if (json.is_string())
+	{
+		// Got it now.
+		auto str = utility::conversions::to_utf8string(json.as_string());
+		replaceXssChars(str);
+		return std::move(web::json::value::string(GET_STRING_T(str)));
+	}
+	else
+	{
+		return std::move(json);
+	}
+}
+
 void RestHandler::apiRegShellApp(const http_request& message)
 {
 	auto jsonApp = message.extract_json(true).get();
@@ -499,7 +555,8 @@ void RestHandler::apiRunApp(const http_request& message)
 	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
-		auto jsonEnv = web::json::value::parse(body).as_object();
+		auto json = web::json::value::parse(body);
+		auto jsonEnv = visitJsonTree(json).as_object();
 		if (HAS_JSON_FIELD(jsonEnv, "env"))
 		{
 			auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
